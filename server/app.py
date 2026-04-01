@@ -3,6 +3,7 @@ FastAPI server exposing the OpenEnv HTTP API for CodeDebugEnv.
 """
 
 import uuid
+import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -63,7 +64,6 @@ def homepage():
         <p class="status">✅ Server is running</p>
         <p>An <strong>OpenEnv</strong> environment where AI agents fix buggy Python code.<br>
         Built for the <strong>Meta × Scaler OpenEnv Hackathon</strong>.</p>
-
         <h2>Tasks</h2>
         <table>
             <tr><th>Task ID</th><th>Difficulty</th><th>Description</th></tr>
@@ -71,7 +71,6 @@ def homepage():
             <tr><td><code>medium_logic</code></td><td><span class="badge orange">Medium</span></td><td>Fix a logic bug in a prime checker</td></tr>
             <tr><td><code>hard_algorithm</code></td><td><span class="badge red">Hard</span></td><td>Fix an off-by-one error in binary search</td></tr>
         </table>
-
         <h2>API Endpoints</h2>
         <table>
             <tr><th>Method</th><th>Path</th><th>Description</th></tr>
@@ -82,7 +81,6 @@ def homepage():
             <tr><td><code>GET</code></td><td><code>/state/{session_id}</code></td><td>Get episode state</td></tr>
             <tr><td><code>GET</code></td><td><code>/docs</code></td><td>Interactive API docs</td></tr>
         </table>
-
         <h2>Quick Test</h2>
         <p>Try the interactive API docs: <a href="/docs" style="color:#4fc3f7">/docs</a></p>
     </body>
@@ -111,11 +109,9 @@ async def reset(request: Request):
         body = await request.json()
     except Exception:
         body = {}
-
     task_id = (body or {}).get("task_id", "easy_syntax")
     if task_id not in TASKS:
         task_id = "easy_syntax"
-
     session_id = str(uuid.uuid4())
     env = CodeDebugEnv(task_id=task_id)
     obs = env.reset()
@@ -141,3 +137,11 @@ def get_state(session_id: str):
     if env is None:
         raise HTTPException(status_code=404, detail="Session not found.")
     return env.state()
+
+
+def main():
+    uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
+
+
+if __name__ == "__main__":
+    main()
