@@ -1,0 +1,83 @@
+name: CodeDebugEnv
+version: "1.0.0"
+description: >
+  A real-world OpenEnv environment where an AI agent is given buggy Python code
+  and must produce a corrected version. The environment tests debugging skills
+  across syntax errors, logic bugs, and algorithmic errors.
+
+tags:
+  - openenv
+  - code-debugging
+  - software-engineering
+  - python
+
+author: "OpenEnv Hackathon Participant"
+
+tasks:
+  - id: easy_syntax
+    difficulty: easy
+    description: "Fix a syntax error in a Python function (missing colon)"
+    max_attempts: 5
+    score_range: [0.0, 1.0]
+
+  - id: medium_logic
+    difficulty: medium
+    description: "Fix a logic bug in a prime-checking function (wrong base case)"
+    max_attempts: 5
+    score_range: [0.0, 1.0]
+
+  - id: hard_algorithm
+    difficulty: hard
+    description: "Fix an off-by-one error in a binary search implementation"
+    max_attempts: 5
+    score_range: [0.0, 1.0]
+
+action_space:
+  type: object
+  properties:
+    fixed_code:
+      type: string
+      description: "The corrected Python source code"
+
+observation_space:
+  type: object
+  properties:
+    buggy_code:
+      type: string
+      description: "The original buggy Python code"
+    task_description:
+      type: string
+      description: "Natural language description of what the function should do"
+    error_hint:
+      type: string
+      description: "stderr output from running the buggy code (partial signal)"
+    attempt:
+      type: integer
+      description: "Current attempt number (1-indexed)"
+    max_attempts:
+      type: integer
+      description: "Maximum allowed attempts per episode"
+
+reward:
+  type: float
+  range: [0.0, 1.0]
+  description: >
+    Fraction of test cases passed by the submitted fixed code.
+    Partial credit is awarded — e.g. 3/5 tests passing yields 0.6.
+    This provides a dense, meaningful reward signal.
+
+episode_termination:
+  - "Score == 1.0 (all tests pass)"
+  - "Attempts exhausted (attempt == max_attempts)"
+
+api:
+  reset: POST /reset
+  step: POST /step
+  state: GET /state/{session_id}
+  tasks: GET /tasks
+  health: GET /health
+
+deployment:
+  type: huggingface_space
+  sdk: docker
+  port: 7860
