@@ -1,0 +1,120 @@
+name: CodeDebugEnv
+version: "1.0.0"
+description: >
+  An OpenEnv environment where AI agents fix buggy Python functions.
+  Tasks range from simple syntax errors (easy) to logic bugs (medium)
+  to off-by-one algorithm errors (hard).  Rewards are dense partial signals
+  (fraction of hidden test cases passed), making the environment well-suited
+  for RL post-training research.
+
+author: SANGRALRAHUL
+tags:
+  - openenv
+  - code-repair
+  - debugging
+  - python
+  - rl-training
+
+sdk: docker
+
+# ── Interface ──────────────────────────────────────────────────────────────
+interface:
+  reset:
+    method: POST
+    path: /reset
+    request:
+      task_id:
+        type: string
+        required: false
+        description: "One of: easy_syntax | medium_logic | hard_algorithm"
+    response:
+      session_id:
+        type: string
+        description: Unique episode identifier
+      observation:
+        type: object
+        description: Initial observation dict
+
+  step:
+    method: POST
+    path: /step
+    request:
+      session_id:
+        type: string
+        required: true
+      fixed_code:
+        type: string
+        required: true
+        description: Corrected Python source code submitted by the agent
+    response:
+      observation:
+        type: object
+      reward:
+        type: float
+        range: [0.0, 1.0]
+        description: Fraction of hidden test cases passed
+      done:
+        type: boolean
+      info:
+        type: object
+
+  state:
+    method: GET
+    path: /state/{session_id}
+    response:
+      type: object
+      description: Full internal episode state
+
+# ── Action space ───────────────────────────────────────────────────────────
+action_space:
+  type: text
+  fields:
+    fixed_code:
+      type: string
+      description: Corrected Python source code
+
+# ── Observation space ──────────────────────────────────────────────────────
+observation_space:
+  type: object
+  fields:
+    task_id:         {type: string}
+    difficulty:      {type: string, enum: [easy, medium, hard]}
+    buggy_code:      {type: string}
+    task_description:{type: string}
+    error_hint:      {type: string}
+    attempt:         {type: integer}
+    max_attempts:    {type: integer}
+
+# ── Reward ─────────────────────────────────────────────────────────────────
+reward:
+  type: dense
+  range: [0.0, 1.0]
+  description: >
+    Fraction of hidden test cases that pass for the submitted fix.
+    Provides partial credit — no sparse-reward problem.
+
+# ── Tasks ──────────────────────────────────────────────────────────────────
+tasks:
+  - id: easy_syntax
+    difficulty: easy
+    description: Fix a missing colon (syntax error) in a sum function
+    expected_baseline_score: 1.0
+
+  - id: medium_logic
+    difficulty: medium
+    description: Fix wrong base-case return value in an is_prime function
+    expected_baseline_score: 0.75
+
+  - id: hard_algorithm
+    difficulty: hard
+    description: Fix an off-by-one error in a binary search function
+    expected_baseline_score: 0.5
+
+# ── Episode config ─────────────────────────────────────────────────────────
+episode:
+  max_steps: 5
+  termination:
+    - condition: reward == 1.0
+      description: Agent achieved perfect score
+    - condition: step_count >= max_steps
+      description: Attempts exhausted

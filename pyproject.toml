@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "code-debug-env"
+version = "1.0.0"
+description = "OpenEnv environment for AI-driven Python code debugging"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.115.5",
+    "uvicorn[standard]==0.32.0",
+    "pydantic==2.9.2",
+    "openai>=1.0.0",
+    "requests>=2.31.0",
+]
