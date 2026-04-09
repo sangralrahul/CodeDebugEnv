@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -45,7 +45,6 @@ class ResetRequest(BaseModel):
     task_id: str | None = Field(
         default=None,
         description="Task to start. One of: easy_syntax | medium_logic | hard_algorithm",
-        examples=["easy_syntax"],
     )
 
 
@@ -71,17 +70,21 @@ def list_tasks() -> dict[str, Any]:
 
 
 @app.post("/reset", tags=["env"])
-def reset(req: ResetRequest) -> dict[str, Any]:
+async def reset(request: Request) -> dict[str, Any]:
     """
-    Start a new episode.
-
-    Returns a session_id and the initial observation containing:
-    - `buggy_code` — the broken Python function
-    - `task_description` — what the function should do
-    - `error_hint` — stderr from running the buggy code
+    Start a new episode. Body is optional — if empty or missing, defaults to easy_syntax.
     """
+    task_id = None
     try:
-        result = _env.reset(req.task_id)
+        body = await request.json()
+        if isinstance(body, dict):
+            task_id = body.get("task_id", None)
+    except Exception:
+        # Empty body or non-JSON — that's fine, use default task
+        task_id = None
+
+    try:
+        result = _env.reset(task_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result
@@ -95,7 +98,7 @@ def step(req: StepRequest) -> dict[str, Any]:
     Returns:
     - `reward` — fraction of test cases that pass (0.0 – 1.0)
     - `done` — True when perfect score OR max_attempts reached
-    - `observation` — updated state (attempt counter, same code prompt)
+    - `observation` — updated state
     - `info` — per-test pass/fail details and grader errors
     """
     try:
