@@ -1,6 +1,19 @@
 """
-server/app.py — re-exports the main FastAPI app for openenv compatibility.
+server/app.py — OpenEnv compatible server entry point.
 """
-from app import app, main
+import uvicorn
+import sys
+import os
 
-__all__ = ["app", "main"]
+# Add parent directory to path so we can import app and environment
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app import app
+
+
+def main():
+    uvicorn.run("app:app", host="0.0.0.0", port=7860, workers=2)
+
+
+if __name__ == "__main__":
+    main()
