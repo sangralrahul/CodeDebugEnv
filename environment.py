@@ -40,7 +40,7 @@ TASKS: dict[str, dict[str, Any]] = {
             {"input": [100], "expected": 100},
         ],
         "test_fn": "sum_list",
-        "expected_baseline": 1.0,
+        "expected_baseline": 0.95,
     },
 
     # ── MEDIUM ────────────────────────────────────────────────────────────
@@ -124,10 +124,16 @@ TASKS: dict[str, dict[str, Any]] = {
 # Grader helpers
 # ---------------------------------------------------------------------------
 
+def _clamp_score(score: float) -> float:
+    """Ensure score is strictly between 0 and 1 (never 0.0 or 1.0 exactly)."""
+    score = max(0.01, min(0.99, score))
+    return round(score, 4)
+
+
 def _exec_code(source: str, fn_name: str) -> tuple[Any, str | None]:
     """Compile & exec `source`, return (function, error_message)."""
     try:
-        ast.parse(source)          # fast syntax check first
+        ast.parse(source)
     except SyntaxError as exc:
         return None, f"SyntaxError: {exc}"
     namespace: dict[str, Any] = {}
@@ -142,14 +148,13 @@ def _exec_code(source: str, fn_name: str) -> tuple[Any, str | None]:
 
 
 def _run_tests(fn: Any, task: dict[str, Any]) -> tuple[float, list[dict]]:
-    """Run the hidden test suite; return (score 0–1, per-test details)."""
+    """Run the hidden test suite; return (score strictly 0-1, per-test details)."""
     results = []
     passed = 0
     for t in task["tests"]:
         inp = t["input"]
         expected = t["expected"]
         try:
-            # Redirect stdout so print() in submitted code doesn't pollute logs
             old_stdout = sys.stdout
             sys.stdout = StringIO()
             if isinstance(inp, tuple):
@@ -167,7 +172,9 @@ def _run_tests(fn: Any, task: dict[str, Any]) -> tuple[float, list[dict]]:
         if ok:
             passed += 1
         results.append({"input": str(inp), "expected": expected, "got": str(got), "passed": ok})
-    score = round(passed / len(task["tests"]), 4)
+
+    raw_score = passed / len(task["tests"])
+    score = _clamp_score(raw_score)
     return score, results
 
 
@@ -175,11 +182,11 @@ def grade(task_id: str, fixed_code: str) -> dict[str, Any]:
     """Public grading entry-point called by the environment step."""
     task = TASKS.get(task_id)
     if task is None:
-        return {"score": 0.0, "error": f"Unknown task_id '{task_id}'", "test_results": []}
+        return {"score": 0.01, "error": f"Unknown task_id '{task_id}'", "test_results": []}
 
     fn, err = _exec_code(fixed_code, task["test_fn"])
     if fn is None:
-        return {"score": 0.0, "error": err, "test_results": []}
+        return {"score": 0.01, "error": err, "test_results": []}
 
     score, details = _run_tests(fn, task)
     return {"score": score, "error": None, "test_results": details}
@@ -199,7 +206,7 @@ class Episode:
         self.task_id: str = task_id
         self.attempt: int = 0
         self.done: bool = False
-        self.best_score: float = 0.0
+        self.best_score: float = 0.01
         self.history: list[dict] = []
 
     def observation(self) -> dict[str, Any]:
@@ -218,7 +225,7 @@ class Episode:
         if self.done:
             return {
                 "observation": self.observation(),
-                "reward": 0.0,
+                "reward": 0.01,
                 "done": True,
                 "info": {"message": "Episode already finished."},
             }
@@ -230,7 +237,8 @@ class Episode:
         if score > self.best_score:
             self.best_score = score
 
-        self.done = score == 1.0 or self.attempt >= self.MAX_ATTEMPTS
+        # Never end on exact 1.0 — use 0.99 as "solved"
+        self.done = score >= 0.99 or self.attempt >= self.MAX_ATTEMPTS
         self.history.append({
             "attempt": self.attempt,
             "score": score,
@@ -270,8 +278,6 @@ class CodeDebugEnv:
 
     def __init__(self) -> None:
         self._sessions: dict[str, Episode] = {}
-
-    # ── Public API ────────────────────────────────────────────────────────
 
     def reset(self, task_id: str | None = None) -> dict[str, Any]:
         if task_id is None:
