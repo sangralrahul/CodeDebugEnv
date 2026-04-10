@@ -6,17 +6,11 @@ An OpenEnv environment where AI agents fix real-world buggy Python code.
 import ast
 import sys
 import textwrap
-import traceback
 import uuid
 from io import StringIO
 from typing import Any
 
-# ---------------------------------------------------------------------------
-# Task bank — 3 tasks (easy → medium → hard) with hidden test suites
-# ---------------------------------------------------------------------------
-
 TASKS: dict[str, dict[str, Any]] = {
-    # ── EASY ──────────────────────────────────────────────────────────────
     "easy_syntax": {
         "difficulty": "easy",
         "description": (
@@ -38,12 +32,10 @@ TASKS: dict[str, dict[str, Any]] = {
             {"input": [-1, -2, -3], "expected": -6},
             {"input": [0, 0, 0], "expected": 0},
             {"input": [100], "expected": 100},
+            {"input": [1, 2, 3, 4, 5], "expected": 15},
         ],
         "test_fn": "sum_list",
-        "expected_baseline": 0.95,
     },
-
-    # ── MEDIUM ────────────────────────────────────────────────────────────
     "medium_logic": {
         "difficulty": "medium",
         "description": (
@@ -65,20 +57,19 @@ TASKS: dict[str, dict[str, Any]] = {
             "AssertionError: is_prime(1) returned True, expected False"
         ),
         "tests": [
-            {"input": 0,  "expected": False},
-            {"input": 1,  "expected": False},
-            {"input": 2,  "expected": True},
-            {"input": 3,  "expected": True},
-            {"input": 4,  "expected": False},
-            {"input": 17, "expected": True},
-            {"input": 18, "expected": False},
-            {"input": 97, "expected": True},
+            {"input": 0,   "expected": False},
+            {"input": 1,   "expected": False},
+            {"input": 2,   "expected": True},
+            {"input": 3,   "expected": True},
+            {"input": 4,   "expected": False},
+            {"input": 17,  "expected": True},
+            {"input": 18,  "expected": False},
+            {"input": 97,  "expected": True},
+            {"input": 100, "expected": False},
+            {"input": 101, "expected": True},
         ],
         "test_fn": "is_prime",
-        "expected_baseline": 0.75,
     },
-
-    # ── HARD ──────────────────────────────────────────────────────────────
     "hard_algorithm": {
         "difficulty": "hard",
         "description": (
@@ -105,33 +96,23 @@ TASKS: dict[str, dict[str, Any]] = {
             "len(arr) when right is initialised to len(arr)."
         ),
         "tests": [
-            {"input": ([1, 3, 5, 7, 9], 5),  "expected": 2},
-            {"input": ([1, 3, 5, 7, 9], 1),  "expected": 0},
-            {"input": ([1, 3, 5, 7, 9], 9),  "expected": 4},
-            {"input": ([1, 3, 5, 7, 9], 4),  "expected": -1},
-            {"input": ([], 1),               "expected": -1},
-            {"input": ([42], 42),            "expected": 0},
-            {"input": ([42], 0),             "expected": -1},
-            {"input": (list(range(0, 1000, 2)), 500), "expected": 250},
+            {"input": ([1, 3, 5, 7, 9], 5),         "expected": 2},
+            {"input": ([1, 3, 5, 7, 9], 1),         "expected": 0},
+            {"input": ([1, 3, 5, 7, 9], 9),         "expected": 4},
+            {"input": ([1, 3, 5, 7, 9], 4),         "expected": -1},
+            {"input": ([42], 42),                    "expected": 0},
+            {"input": ([42], 0),                     "expected": -1},
+            {"input": (list(range(0, 100, 2)), 50),  "expected": 25},
+            {"input": (list(range(0, 100, 2)), 51),  "expected": -1},
+            {"input": ([2, 4, 6, 8, 10], 6),        "expected": 2},
+            {"input": ([2, 4, 6, 8, 10], 11),       "expected": -1},
         ],
         "test_fn": "binary_search",
-        "expected_baseline": 0.5,
     },
 }
 
 
-# ---------------------------------------------------------------------------
-# Grader helpers
-# ---------------------------------------------------------------------------
-
-def _clamp_score(score: float) -> float:
-    """Ensure score is strictly between 0 and 1 (never 0.0 or 1.0 exactly)."""
-    score = max(0.01, min(0.99, score))
-    return round(score, 4)
-
-
 def _exec_code(source: str, fn_name: str) -> tuple[Any, str | None]:
-    """Compile & exec `source`, return (function, error_message)."""
     try:
         ast.parse(source)
     except SyntaxError as exc:
@@ -139,7 +120,7 @@ def _exec_code(source: str, fn_name: str) -> tuple[Any, str | None]:
     namespace: dict[str, Any] = {}
     try:
         exec(compile(source, "<submitted>", "exec"), namespace)  # noqa: S102
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return None, f"RuntimeError during exec: {exc}"
     fn = namespace.get(fn_name)
     if fn is None or not callable(fn):
@@ -148,7 +129,6 @@ def _exec_code(source: str, fn_name: str) -> tuple[Any, str | None]:
 
 
 def _run_tests(fn: Any, task: dict[str, Any]) -> tuple[float, list[dict]]:
-    """Run the hidden test suite; return (score strictly 0-1, per-test details)."""
     results = []
     passed = 0
     for t in task["tests"]:
@@ -165,7 +145,7 @@ def _run_tests(fn: Any, task: dict[str, Any]) -> tuple[float, list[dict]]:
                 got = fn(inp)
             sys.stdout = old_stdout
             ok = got == expected
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             sys.stdout = old_stdout
             ok = False
             got = f"EXCEPTION: {exc}"
@@ -173,32 +153,28 @@ def _run_tests(fn: Any, task: dict[str, Any]) -> tuple[float, list[dict]]:
             passed += 1
         results.append({"input": str(inp), "expected": expected, "got": str(got), "passed": ok})
 
-    raw_score = passed / len(task["tests"])
-    score = _clamp_score(raw_score)
+    total = len(task["tests"])
+    raw = passed / total
+
+    # ── IMPORTANT: scores must be STRICTLY between 0 and 1 (not 0.0, not 1.0)
+    # Clamp to (0.01, 0.99) range
+    score = round(max(0.01, min(0.99, raw)), 4)
+
     return score, results
 
 
 def grade(task_id: str, fixed_code: str) -> dict[str, Any]:
-    """Public grading entry-point called by the environment step."""
     task = TASKS.get(task_id)
     if task is None:
         return {"score": 0.01, "error": f"Unknown task_id '{task_id}'", "test_results": []}
-
     fn, err = _exec_code(fixed_code, task["test_fn"])
     if fn is None:
         return {"score": 0.01, "error": err, "test_results": []}
-
     score, details = _run_tests(fn, task)
     return {"score": score, "error": None, "test_results": details}
 
 
-# ---------------------------------------------------------------------------
-# Session / Episode state
-# ---------------------------------------------------------------------------
-
 class Episode:
-    """Holds all mutable state for one agent episode."""
-
     MAX_ATTEMPTS = 5
 
     def __init__(self, task_id: str):
@@ -229,15 +205,12 @@ class Episode:
                 "done": True,
                 "info": {"message": "Episode already finished."},
             }
-
         self.attempt += 1
         result = grade(self.task_id, fixed_code)
         score: float = result["score"]
-
         if score > self.best_score:
             self.best_score = score
-
-        # Never end on exact 1.0 — use 0.99 as "solved"
+        # Done when score is very high (>=0.99) or attempts exhausted
         self.done = score >= 0.99 or self.attempt >= self.MAX_ATTEMPTS
         self.history.append({
             "attempt": self.attempt,
@@ -245,7 +218,6 @@ class Episode:
             "error": result["error"],
             "test_results": result["test_results"],
         })
-
         return {
             "observation": self.observation(),
             "reward": score,
@@ -269,13 +241,7 @@ class Episode:
         }
 
 
-# ---------------------------------------------------------------------------
-# Environment (session manager)
-# ---------------------------------------------------------------------------
-
 class CodeDebugEnv:
-    """Thread-safe session manager — one Episode per session_id."""
-
     def __init__(self) -> None:
         self._sessions: dict[str, Episode] = {}
 
